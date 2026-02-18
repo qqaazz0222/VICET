@@ -39,9 +39,9 @@ ENV/
 .ipynb_checkpoints
 
 # Project Specific
-data/
-checkpoints/
-decoder_test_results/
+data/*
+checkpoints/*
+decoder_test_results/*
 wandb/
 runs/
 logs/
