@@ -40,7 +40,8 @@ def init_args():
     parser = argparse.ArgumentParser(description="DICOM 이미지를 처리하고 특징을 추출하는 스크립트")
     
     # 기본 경로 설정
-    parser.add_argument("--dicom_dir", type=str, default="./data/dicom", help="입력 DICOM 파일이 위치한 디렉토리")
+    # parser.add_argument("--dicom_dir", type=str, default="./data/dicom", help="입력 DICOM 파일이 위치한 디렉토리")
+    parser.add_argument("--dicom_dir", type=str, default="/workspace/Contrast_CT/hyunsu/Dataset_DucosyGAN/Kyunghee_Univ_Masked_10", help="입력 DICOM 파일이 위치한 디렉토리")
     parser.add_argument("--feature_dir", type=str, default="./data/feature", help="추출된 특징(.npy)을 저장할 디렉토리")
     parser.add_argument("--diff_dir", type=str, default="./data/diff", help="차분 맵(Difference Map)을 저장할 디렉토리")
     parser.add_argument("--location_dir", type=str, default="./data/location", help="위치 맵(Location Map)을 저장할 디렉토리")
@@ -355,7 +356,7 @@ def main():
     log_tab(f"Number of patients: {len(dataset['ncct'])}")   
     
     # 4. 특징 추출 및 파일 저장
-    # generate_feature(args, model, dataset["ncct"])
+    generate_feature(args, model, dataset["ncct"])
     generate_map_feature(args, model, dataset["ncct"], dataset["cect"])
     
     log_tab(f"Done! Features are saved to {args.feature_dir}")

@@ -47,6 +47,9 @@ runs/
 logs/
 *.log
 
+# DINOv3
+dinov3/
+
 # Model Weights
 *.pth
 *.pt
