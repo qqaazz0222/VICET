@@ -1,0 +1,20 @@
+name: vicet
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pytorch>=2.0.0
+  - torchvision>=0.15.0
+  - pytorch-cuda=11.8
+  - numpy
+  - pydicom
+  - pillow
+  - matplotlib
+  - tqdm
+  - scipy
+  - pip
+  - pip:
+    - opencv-python
