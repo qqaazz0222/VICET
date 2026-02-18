@@ -13,7 +13,7 @@ def n2i(npy_path: str, img_path: str):
     plt.close()
 
 if __name__ == "__main__":
-    n2i("./data/diff/KP-0008_0150.npy", "./debug_diff.jpg")
-    n2i("./data/location/KP-0008_0150.npy", "./debug_location.jpg")
+    n2i("./data/train/diff/KP-0008_0150.npy", "./debug_diff.jpg")
+    n2i("./data/train/location/KP-0008_0150.npy", "./debug_location.jpg")
     # n2i("/workspace/ViTN2C/decoder_diff/output_test/KP-0010_0155.npy", "./debug_diff_result.jpg")
     # n2i("/workspace/ViTN2C/decoder_location/output_test/KP-0010_0155.npy", "./debug_location_result.jpg")

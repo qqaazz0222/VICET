@@ -42,9 +42,10 @@ def init_args():
     # 기본 경로 설정
     # parser.add_argument("--dicom_dir", type=str, default="./data/dicom", help="입력 DICOM 파일이 위치한 디렉토리")
     parser.add_argument("--dicom_dir", type=str, default="/workspace/Contrast_CT/hyunsu/Dataset_DucosyGAN/Kyunghee_Univ_Masked_10", help="입력 DICOM 파일이 위치한 디렉토리")
-    parser.add_argument("--feature_dir", type=str, default="./data/feature", help="추출된 특징(.npy)을 저장할 디렉토리")
-    parser.add_argument("--diff_dir", type=str, default="./data/diff", help="차분 맵(Difference Map)을 저장할 디렉토리")
-    parser.add_argument("--location_dir", type=str, default="./data/location", help="위치 맵(Location Map)을 저장할 디렉토리")
+    parser.add_argument("--train_dir", type=str, default="./data/train", help="입력 DICOM 파일이 위치한 디렉토리")
+    parser.add_argument("--feature_dir", type=str, default="./data/train/feature", help="추출된 특징(.npy)을 저장할 디렉토리")
+    parser.add_argument("--diff_dir", type=str, default="./data/train/diff", help="차분 맵(Difference Map)을 저장할 디렉토리")
+    parser.add_argument("--location_dir", type=str, default="./data/train/location", help="위치 맵(Location Map)을 저장할 디렉토리")
     
     # 데이터 상세 설정
     parser.add_argument("--ncct_dir", type=str, default="POST VUE", help="NCCT 시리즈를 식별하기 위한 문자열")
@@ -68,7 +69,8 @@ def init_args():
     if not os.path.exists(args.dicom_dir):
         os.makedirs(args.dicom_dir, exist_ok=True)
         raise FileNotFoundError(f"입력 디렉토리 {args.dicom_dir}를 찾을 수 없습니다.")
-        
+    
+    os.makedirs(args.train_dir, exist_ok=True)
     os.makedirs(args.feature_dir, exist_ok=True)
     os.makedirs(args.diff_dir, exist_ok=True)
     os.makedirs(args.location_dir, exist_ok=True)
@@ -95,7 +97,7 @@ def load_model(model_name: str, weights_path: str, device: str = "cuda"):
     # 로컬 가중치 파일이 존재하면 로드
     if os.path.exists(weights_path):
         log_tab(f"Loading local weights from {weights_path}")
-        state_dict = torch.load(weights_path, map_location="cpu")
+        state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
         model.load_state_dict(state_dict)
     else:
         raise FileNotFoundError(f"가중치 파일을 찾을 수 없습니다: {weights_path}")
@@ -283,7 +285,7 @@ def generate_map_feature(args, model, ncct_dataset, cect_dataset, min_threshold=
     NCCT와 CECT 이미지 사이의 차분 특징(Difference Map) 및 조영 효과 위치를 생성합니다.
     """
     
-    def smoothing_diff_map(diff_map, kernel_size=4, iterations=5):
+    def smoothing_diff_map(diff_map, kernel_size=3, iterations=5):
         """
         0이 아닌 유효 픽셀 값을 기반으로 Dilation(팽창) 연산을 수행하여 주변의 0인 영역을 채웁니다.
         보존할 영역(200 HU 이상)의 경계를 부드럽게 블렌딩하여 합칩니다.
@@ -292,7 +294,7 @@ def generate_map_feature(args, model, ncct_dataset, cect_dataset, min_threshold=
         kernel = np.ones((kernel_size, kernel_size), np.uint8)
         
         # 1. 보존할 영역 마스크 생성 (200 HU 이상)
-        preservation_threshold = 200
+        preservation_threshold = 160
         # 마스크를 float32로 변환 (0.0 ~ 1.0)
         preservation_mask = (diff_map >= preservation_threshold).astype(np.float32)
         
@@ -334,7 +336,7 @@ def generate_map_feature(args, model, ncct_dataset, cect_dataset, min_threshold=
             location_map[diff_map >= min_threshold] = 1
 
             # diff_map에 smoothing_diff_map 적용
-            diff_map = smoothing_diff_map(diff_map)
+            # diff_map = smoothing_diff_map(diff_map)
             
             # 결과 저장
             diff_save_path = os.path.join(args.diff_dir, f"{patient_id}_{os.path.basename(ncct_dcm_file).replace('.dcm', '.npy')}")
@@ -356,7 +358,7 @@ def main():
     log_tab(f"Number of patients: {len(dataset['ncct'])}")   
     
     # 4. 특징 추출 및 파일 저장
-    generate_feature(args, model, dataset["ncct"])
+    # generate_feature(args, model, dataset["ncct"])
     generate_map_feature(args, model, dataset["ncct"], dataset["cect"])
     
     log_tab(f"Done! Features are saved to {args.feature_dir}")

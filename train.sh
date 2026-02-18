@@ -35,12 +35,12 @@ if [ $? != 0 ]; then
 fi
 
 # Window 0: Decoder Diff Training
-tmux send-keys -t $SESSION_NAME:0 "cd /workspace/ViTN2C/decoder_diff" C-m
+tmux send-keys -t $SESSION_NAME:0 "cd decoder_diff" C-m
 tmux send-keys -t $SESSION_NAME:0 "python3 train.py --epochs $EPOCHS --batch_size $BATCH_SIZE --save_dir ./checkpoints" C-m
 
 # Window 1: Decoder Location Training
 tmux new-window -t $SESSION_NAME -n 'location'
-tmux send-keys -t $SESSION_NAME:1 "cd /workspace/ViTN2C/decoder_location" C-m
+tmux send-keys -t $SESSION_NAME:1 "cd decoder_location" C-m
 tmux send-keys -t $SESSION_NAME:1 "python3 train.py --epochs $EPOCHS --batch_size $BATCH_SIZE --save_dir ./checkpoints" C-m
 
 echo "Training started in tmux session '$SESSION_NAME'"

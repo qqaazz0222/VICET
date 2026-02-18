@@ -107,7 +107,7 @@ def load_dinov3_model(model_name: str, weights_path: str, device: str = "cuda"):
 
     if os.path.exists(weights_path):
         print(f"Loading local weights from {weights_path}")
-        state_dict = torch.load(weights_path, map_location="cpu")
+        state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
         model.load_state_dict(state_dict)
     else:
         raise FileNotFoundError(f"Weights file not found: {weights_path}")
@@ -196,11 +196,11 @@ def process_chunk(gpu_id, file_chunk, args):
     DiffModel = load_module_from_path('./decoder_diff/model.py', 'diff_model')
     
     loc_decoder = LocationModel.RefinedLocationDecoder().to(device)
-    loc_decoder.load_state_dict(torch.load(args.loc_weights, map_location=device))
+    loc_decoder.load_state_dict(torch.load(args.loc_weights, map_location=device, weights_only=True))
     loc_decoder.eval()
     
     diff_decoder = DiffModel.RefinedDiffDecoder().to(device)
-    diff_decoder.load_state_dict(torch.load(args.diff_weights, map_location=device))
+    diff_decoder.load_state_dict(torch.load(args.diff_weights, map_location=device, weights_only=True))
     diff_decoder.eval()
     
     # print(f"[GPU {gpu_id}] Models loaded. Processing {len(file_chunk)} files...")
@@ -304,7 +304,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run VICET Pipeline: DICOM -> DINOv3 -> Decoders -> Synthetic DICOM (Multi-GPU)")
     
     parser.add_argument("--input_dir", type=str, default="/workspace/Contrast_CT/hyunsu/Dataset_DucosyGAN/Kyunghee_Univ_Masked", help="Root directory containing input DICOMs (NCCT)")
-    parser.add_argument("--output_dir", type=str, default="./data/SYNTHETIC", help="Directory to save synthetic DICOMs")
+    parser.add_argument("--output_dir", type=str, default="./data/synthetic", help="Directory to save synthetic DICOMs")
     parser.add_argument("--ncct_keyword", type=str, default="POST VUE", help="Keyword to filter NCCT DICOM files")
     
     # Model Weights

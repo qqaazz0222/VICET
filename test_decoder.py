@@ -18,7 +18,7 @@ def load_module_from_path(path, module_name):
 LocationModel = load_module_from_path('./decoder_location/model.py', 'location_model')
 DiffModel = load_module_from_path('./decoder_diff/model.py', 'diff_model')
 
-def test_decoders(input_path, loc_checkpoint, diff_checkpoint, output_dir, input_hu_array, gt_hu_array):
+def test_decoders(input_path, loc_checkpoint, diff_checkpoint, output_dir, input_hu_array, gt_hu_array, gt_diff_file, gt_location_file):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
@@ -46,13 +46,13 @@ def test_decoders(input_path, loc_checkpoint, diff_checkpoint, output_dir, input
     print(f"Running Location Decoder ({loc_checkpoint})...")
     try:
         loc_model = LocationModel.RefinedLocationDecoder().to(device)
-        loc_model.load_state_dict(torch.load(loc_checkpoint, map_location=device))
+        loc_model.load_state_dict(torch.load(loc_checkpoint, map_location=device, weights_only=True))
         loc_model.eval()
         
         with torch.no_grad():
             loc_out = loc_model(feature_tensor)
             loc_prob = torch.sigmoid(loc_out).cpu().numpy().squeeze()
-            loc_binary = (loc_prob > 0.01).astype(float)
+            loc_binary = (loc_prob > 0.5).astype(float)
             
         # Save
         np.save(os.path.join(output_dir, 'location_prob.npy'), loc_prob)
@@ -67,7 +67,7 @@ def test_decoders(input_path, loc_checkpoint, diff_checkpoint, output_dir, input
     print(f"Running Diff Decoder ({diff_checkpoint})...")
     try:
         diff_model = DiffModel.RefinedDiffDecoder().to(device)
-        diff_model.load_state_dict(torch.load(diff_checkpoint, map_location=device))
+        diff_model.load_state_dict(torch.load(diff_checkpoint, map_location=device, weights_only=True))
         diff_model.eval()
         
         with torch.no_grad():
@@ -86,54 +86,67 @@ def test_decoders(input_path, loc_checkpoint, diff_checkpoint, output_dir, input
     hu_loc_binary[input_hu_array > 16] = 1
         
     ratio = 0.15
-    # final_res = diff_res * hu_loc_binary * ratio + diff_res * loc_binary * (1 - ratio)
-    final_res = diff_res * hu_loc_binary * ratio + diff_res * loc_prob * (1 - ratio)
-    final_res *= 2.5
+    final_res = diff_res * hu_loc_binary * ratio + diff_res * loc_binary * (1 - ratio)
     final_res = gaussian_filter(final_res, sigma=1.0)
     
     final_sythetic = input_hu_array + final_res
     
     # window center: 40, windwo width: 400
     window_center = 40
-    window_width = 800
+    window_width = 400
+    input_hu_array = np.clip(input_hu_array, window_center - window_width / 2, window_center + window_width / 2)
     final_sythetic = np.clip(final_sythetic, window_center - window_width / 2, window_center + window_width / 2)
-    final_gt = np.clip(gt_hu_array, window_center - window_width / 2, window_center + window_width / 2)    
+    final_gt = np.clip(gt_hu_array, window_center - window_width / 2, window_center + window_width / 2)
+    gt_diff = np.load(gt_diff_file)
+    gt_location = np.load(gt_location_file)
 
     # 4. Visualization
     plt.figure(figsize=(15, 10))
     
-    if loc_prob is not None:
-        plt.subplot(2, 3, 1)
-        plt.title("Location")
+    if gt_location is not None:
+        plt.subplot(3, 3, 1)
+        plt.title("Location(GT)")
+        plt.imshow(gt_location, cmap='gray')
+        plt.colorbar()
+    
+    if gt_diff is not None:
+        plt.subplot(3, 3, 2)
+        plt.title("Diff(GT)")
+        plt.imshow(gt_diff, cmap='gray')
+        plt.colorbar()
+    
+    if loc_binary is not None:
+        plt.subplot(3, 3, 4)
+        plt.title("Location(Pred)")
         plt.imshow(loc_binary, cmap='gray')
         plt.colorbar()
         
     if diff_res is not None:
-        plt.subplot(2, 3, 2)
-        plt.title("Diff")
+        plt.subplot(3, 3, 5)
+        plt.title("Diff(Pred)")
         plt.imshow(diff_res, cmap='gray') # cmap='seismic' or 'bwr' might be better for diff if centered at 0, but gray is safe
         plt.colorbar()
         
     if final_res is not None:
-        plt.subplot(2, 3, 3)
-        plt.title("Final")
+        plt.subplot(3, 3, 6)
+        plt.title("Final(Pred)")
         plt.imshow(final_res, cmap='gray') # cmap='seismic' or 'bwr' might be better for diff if centered at 0, but gray is safe
         plt.colorbar()
         
     if input_hu_array is not None:
-        plt.subplot(2, 3, 4)
+        plt.subplot(3, 3, 7)
         plt.title("Input")
         plt.imshow(input_hu_array, cmap='gray') # cmap='seismic' or 'bwr' might be better for diff if centered at 0, but gray is safe
         plt.colorbar()
         
     if final_sythetic is not None:
-        plt.subplot(2, 3, 5)
+        plt.subplot(3, 3, 8)
         plt.title("Final Synthetic")
         plt.imshow(final_sythetic, cmap='gray') # cmap='seismic' or 'bwr' might be better for diff if centered at 0, but gray is safe
         plt.colorbar()
         
     if final_gt is not None:
-        plt.subplot(2, 3, 6)
+        plt.subplot(3, 3, 9)
         plt.title("Final GT")
         plt.imshow(final_gt, cmap='gray') # cmap='seismic' or 'bwr' might be better for diff if centered at 0, but gray is safe
         plt.colorbar()
@@ -158,7 +171,9 @@ if __name__ == "__main__":
     gt_dicom_file = f'{input_dicom_dir}/KP-0054/POST STD/0150.dcm'
     input_hu_array = dicom_to_hu(input_dicom_file)
     gt_hu_array = dicom_to_hu(gt_dicom_file)
-    input_file = './data/feature/KP-0054_0150.npy'
+    input_file = './data/train/feature/KP-0054_0150.npy'
+    gt_diff_file = f'./data/train/diff/KP-0054_0150.npy'
+    gt_location_file = f'./data/train/location/KP-0054_0150.npy'
     
     # Checkpoints
     loc_ckpt = './decoder_location/checkpoints/best_model.pth'
@@ -176,4 +191,4 @@ if __name__ == "__main__":
     if not os.path.exists(diff_ckpt):
         print(f"Warning: Diff checkpoint {diff_ckpt} not found.")
 
-    test_decoders(input_file, loc_ckpt, diff_ckpt, output_dir, input_hu_array, gt_hu_array)
+    test_decoders(input_file, loc_ckpt, diff_ckpt, output_dir, input_hu_array, gt_hu_array, gt_diff_file, gt_location_file)

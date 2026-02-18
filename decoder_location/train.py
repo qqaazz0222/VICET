@@ -10,6 +10,64 @@ import argparse
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+
+import torch.nn.functional as F
+
+class EdgeWeightedBCELoss(nn.Module):
+    def __init__(self, edge_weight=10.0):
+        super(EdgeWeightedBCELoss, self).__init__()
+        self.edge_weight = edge_weight
+        
+    def get_boundary(self, mask):
+        # mask: (B, 1, H, W), binary (0 or 1)
+        # Use MaxPool to find dilation
+        m = nn.MaxPool2d(3, stride=1, padding=1)
+        dilated = m(mask)
+        eroded = -m(-mask)
+        # Boundary is difference between dilated and eroded
+        boundary = dilated - eroded
+        return boundary
+
+    def forward(self, pred, target):
+        loss = F.binary_cross_entropy_with_logits(pred, target, reduction='none')
+        
+        edges = self.get_boundary(target)
+        weights = torch.ones_like(target) + edges * (self.edge_weight - 1)
+        
+        return (loss * weights).mean()
+
+class DiceLoss(nn.Module):
+    def __init__(self, smooth=1.0):
+        super(DiceLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, pred, target):
+        pred_sigmoid = torch.sigmoid(pred)
+        
+        # Flatten
+        pred_flat = pred_sigmoid.view(-1)
+        target_flat = target.view(-1)
+        
+        intersection = (pred_flat * target_flat).sum()
+        union = pred_flat.sum() + target_flat.sum()
+        
+        dice = (2. * intersection + self.smooth) / (union + self.smooth)
+        return 1 - dice
+
+class CombinedLoss(nn.Module):
+    def __init__(self, bce_weight=0.5, dice_weight=0.5):
+        super(CombinedLoss, self).__init__()
+        self.bce = EdgeWeightedBCELoss(edge_weight=10.0) # Increased weight for edges
+        self.dice = DiceLoss()
+        self.bce_weight = bce_weight
+        self.dice_weight = dice_weight
+        
+    def forward(self, pred, target):
+        loss_bce = self.bce(pred, target)
+        loss_dice = self.dice(pred, target)
+        return self.bce_weight * loss_bce + self.dice_weight * loss_dice
+
+
 def setup_distributed():
     dist.init_process_group(backend="nccl")
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -68,7 +126,7 @@ def train(args):
     model = DDP(model, device_ids=[local_rank], output_device=local_rank)
     
     # Loss & Optimizer
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = CombinedLoss(bce_weight=0.5, dice_weight=0.5)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     
     # Train Loop
@@ -158,6 +216,18 @@ def train(args):
                 'optimizer_state_dict': optimizer.state_dict(),
                 'best_loss': best_loss
             }
+            # Save every 10 epochs
+            if (epoch + 1) % 10 == 0:
+                epoch_save_path = os.path.join(args.save_dir, f'epoch_{epoch+1}.pth')
+                checkpoint = {
+                    'epoch': epoch,
+                    'model_state_dict': model.module.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'best_loss': best_loss
+                }
+                torch.save(checkpoint, epoch_save_path)
+                print(f"Saved checkpoint to {epoch_save_path}")
+
             torch.save(checkpoint, last_save_path)
                 
     cleanup_distributed()

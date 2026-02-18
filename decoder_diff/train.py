@@ -10,6 +10,29 @@ import argparse
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+class WeightedDiffLoss(nn.Module):
+    def __init__(self, threshold=50.0, weight=5.0):
+        super(WeightedDiffLoss, self).__init__()
+        self.threshold = threshold
+        self.weight = weight
+        self.l1 = nn.L1Loss(reduction='none')
+    
+    def forward(self, pred, target):
+        loss = self.l1(pred, target)
+        
+        # Apply higher weight to pixels with Ground Truth value > threshold
+        weights = torch.ones_like(target)
+        weights[target > self.threshold] = self.weight
+        
+        # Add smooth scaling: weight increases linearly above threshold
+        # Max weight cap at 20.0 to prevent gradient explosion
+        weights = torch.where(target > self.threshold, 
+                            torch.clamp(self.weight + (target - self.threshold) * 0.05, max=20.0), 
+                            1.0)
+        
+        return (loss * weights).mean()
+
+
 def setup_distributed():
     dist.init_process_group(backend="nccl")
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -68,7 +91,7 @@ def train(args):
     model = DDP(model, device_ids=[local_rank], output_device=local_rank)
     
     # Loss & Optimizer
-    criterion = nn.L1Loss() 
+    criterion = WeightedDiffLoss(threshold=50.0, weight=5.0) 
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     
     # Train Loop
@@ -158,6 +181,18 @@ def train(args):
                 'optimizer_state_dict': optimizer.state_dict(),
                 'best_loss': best_loss
             }
+            # Save every 10 epochs
+            if (epoch + 1) % 10 == 0:
+                epoch_save_path = os.path.join(args.save_dir, f'epoch_{epoch+1}.pth')
+                checkpoint = {
+                    'epoch': epoch,
+                    'model_state_dict': model.module.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'best_loss': best_loss
+                }
+                torch.save(checkpoint, epoch_save_path)
+                print(f"Saved checkpoint to {epoch_save_path}")
+
             torch.save(checkpoint, last_save_path)
                 
     cleanup_distributed()
